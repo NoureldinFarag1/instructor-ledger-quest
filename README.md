@@ -1,66 +1,66 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Instructor Revenue Ledger
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+The money core of an LMS: subscription payments come in, each instructor's share is recognized over time, and payouts go out through an unreliable payment provider without ever paying anyone twice.
 
-## About Laravel
+Design reasoning lives in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). How I used AI is in [docs/AI_USAGE.md](docs/AI_USAGE.md).
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Setup
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Requirements: PHP 8.2+ with the `intl` extension (Filament needs it), Composer, and MySQL 8 or MariaDB. I developed and tested on MariaDB (XAMPP); everything the design relies on (unique indexes, CHECK constraints, row locks) behaves the same on MySQL 8.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+```
 
-## Learning Laravel
+Create two databases, `ledger` and `ledger_test`, and set your MySQL credentials in `.env` with `DB_CONNECTION=mysql`, `DB_DATABASE=ledger` and `QUEUE_CONNECTION=database`.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+```bash
+php artisan migrate --seed
+php artisan make:filament-user
+```
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+## Running the money flow
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+```bash
+php artisan ledger:recognize --date=2026-09-20   # recognize earnings up to a date
+php artisan ledger:payout --date=2026-09-20      # reserve balances and queue payouts
+php artisan queue:work --stop-when-empty         # send payouts through the mock provider
+php artisan ledger:reconcile --stale=0           # settle unknown or stuck payouts
+```
 
-## Laravel Sponsors
+Then open `/admin` to see each instructor's earned, paid, in flight and outstanding amounts, plus their payout history.
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+By default the mock provider picks a random outcome per payout (success, permanent failure, or timeout after the money already moved), so each run looks a little different. To demo one scenario on purpose, force the outcome:
 
-### Premium Partners
+```bash
+MOCK_PAYMENT_OUTCOME=timeout php artisan queue:work --stop-when-empty   # everything lands in "unknown"
+php artisan ledger:reconcile --stale=0                                   # settles them without resending
+```
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+Valid values are `success`, `fail` and `timeout`. Leave it unset for random.
 
-## Contributing
+## Running the tests
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+./vendor/bin/pest
+```
 
-## Code of Conduct
+Tests run against the `ledger_test` MySQL database on purpose. The idempotency guarantees depend on unique indexes, CHECK constraints and row locks, so I wanted the tests to exercise the real engine rather than SQLite.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+The suite covers the rounding and recognition math (unit tests), recognition idempotency and refunds, and the three required payout guarantees: running the payout twice, retried or duplicated jobs, and provider timeouts never cause a double payment. It also covers permanent failure and a worker crashing after the money moved.
 
-## Security Vulnerabilities
+## Assumptions
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+1. All money is stored as integer piastres. There's no multi-currency support.
+2. A subscription's term runs from `starts_on` (inclusive) to `ends_on` (exclusive). The start day counts as day 1, and the refund day counts as a used day.
+3. Engagement is modeled as a fixed weight per instructor per subscription (for example, watch minutes). Weights don't change mid-term.
+4. Students aren't modeled. They aren't needed for the money logic, so a subscription only carries its amount, term and instructors.
+5. Instructors are a separate table from `users`. The `users` table only holds admins who log in to Filament.
+6. The platform's share isn't written to the ledger. It's derived as payment minus instructor earnings, so leftover piastres from rounding stay with the platform automatically.
+7. The refund payable to the student is calculated by the same formula (payment minus earned to date) but isn't executed as a money movement here, since the brief only covers instructor payouts.
 
-## License
+## Known gaps
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+See the "Known limitations" section in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
