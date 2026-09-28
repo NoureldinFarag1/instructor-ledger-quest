@@ -18,7 +18,11 @@ class SubscriptionFactory extends Factory
     public function definition(): array
     {
         return [
-            //
+            'plan' => 'monthly',
+            'amount' => 9999,
+            'instructor_share_bps' => 7000,
+            'starts_on' => '2026-09-01',
+            'ends_on' => '2026-10-01',
         ];
     }
 }
