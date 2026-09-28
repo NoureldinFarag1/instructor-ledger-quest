@@ -19,7 +19,7 @@ return new class extends Migration
             $table->unsignedInteger('weight');
             $table->timestamps();
 
-            $table->unique('instructor_id', 'subscription_id');
+            $table->unique(['instructor_id', 'subscription_id']);
         });
 
         DB::statement('ALTER TABLE subscription_instructor

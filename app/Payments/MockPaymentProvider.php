@@ -12,7 +12,7 @@ class MockPaymentProvider implements PaymentProvider
 
     public function send(string $key, int $instructorId, int $amount): ProviderResult
     {
-        $outcome = $this->forcedOutcome ?? this->randomOutcome();
+        $outcome = $this->forcedOutcome ?? $this->randomOutcome();
 
         if ($outcome === 'fail') {
             $this->record($key, ProviderResult::FAILED);

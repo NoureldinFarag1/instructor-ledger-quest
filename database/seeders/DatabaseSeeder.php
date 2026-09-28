@@ -15,9 +15,12 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        $instructors = \App\Models\Instructor::factory()->count(4)->create();
+
+        \App\Models\Subscription::factory()->count(20)->create()->each(function ($sub) use ($instructors) {
+            $sub->instructors()->attach(
+                $instructors->random(rand(1, 3))->mapWithKeys(fn ($i) => [$i->id => ['weight' => rand(10, 120)]])
+            );
+        });
     }
 }

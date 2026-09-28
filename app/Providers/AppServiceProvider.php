@@ -13,7 +13,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(PaymentProvider::class, MockPaymentProvider::class);
+        $this->app->singleton(PaymentProvider::class, function () {
+            $provider = new \App\Payments\MockPaymentProvider;
+            $provider->forcedOutcome = config('services.mock_payment.outcome') ?: null;
+
+            return $provider;
+        });
     }
 
     /**

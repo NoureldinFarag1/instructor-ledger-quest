@@ -34,5 +34,7 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
-
+    'mock_payment' => [
+        'outcome' => env('MOCK_PAYMENT_OUTCOME')
+    ]
 ];
